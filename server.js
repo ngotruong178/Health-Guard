@@ -53,27 +53,48 @@ app.get('/api/vitals', (req, res) => {
 });
 
 // ================= API PHÂN TÍCH Y KHOA QUA GEMINI =================
+// ================= API PHÂN TÍCH Y KHOA QUA GEMINI (FETCH TRỰC TIẾP) =================
 app.post('/api/analyze-health', async (req, res) => {
     try {
         const { name, age, vitals } = req.body;
+        const apiKey = process.env.GEMINI_API_KEY;
 
-        if (!process.env.GEMINI_API_KEY) {
+        if (!apiKey) {
             return res.status(500).json({ error: "Chưa cấu hình GEMINI_API_KEY trên Render!" });
         }
 
         const systemPrompt = "Bạn là trợ lý y khoa AI tư vấn sức khỏe gia đình chuyên nghiệp. Hãy đưa ra nhận xét ngắn gọn (3-4 dòng) bằng tiếng Việt cho người dùng về các chỉ số sinh hiệu đo được, đồng thời đưa ra 2 lời khuyên hữu ích về ăn uống/nghỉ ngơi. Thân thiện, chu đáo.";
         const userPrompt = `Bệnh nhân: ${name || 'Thành viên'} (${age || 20} tuổi). Chỉ số hiện tại từ ESP32: Nhịp tim: ${vitals.heart_rate} bpm, SpO2: ${vitals.spo2}%, Thân nhiệt: ${vitals.temp}°C, Huyết áp: ${vitals.sys_bp}/${vitals.dia_bp} mmHg. Hãy phân tích.`;
 
-        // Sử dụng mô hình gemini-2.5-flash chuẩn từ SDK chính thức
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-flash",
-            systemInstruction: systemPrompt 
+        // Gọi trực tiếp REST API v1beta của Gemini
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [
+                    {
+                        role: "user",
+                        parts: [{ text: userPrompt }]
+                    }
+                ],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                }
+            })
         });
 
-        const result = await model.generateContent(userPrompt);
-        const responseText = result.response.text();
+        const data = await response.json();
 
-        res.json({ result: responseText });
+        if (data.error) {
+            throw new Error(data.error.message || "Lỗi từ Google Gemini API");
+        }
+
+        const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Không thể tải phản hồi từ Gemini. Vui lòng thử lại.";
+
+        res.json({ result: aiText });
+
     } catch (error) {
         console.error("Lỗi Gemini backend:", error);
         res.status(500).json({ error: "Lỗi phân tích từ Gemini: " + error.message });
