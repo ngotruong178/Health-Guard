@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full bg-slate-950">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HealthGuard AI - Trạm Theo Dõi Sức Khỏe ESP32-S3</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            500: '#0284c7',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-card-active {
+            background: rgba(14, 165, 233, 0.18);
+            border: 1px solid rgba(56, 189, 248, 0.5);
+        }
+        .pulse-heart {
+            animation: pulse-heart 1.2s infinite ease-in-out;
+        }
+        @keyframes pulse-heart {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.18); }
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="h-full text-slate-100 bg-slate-950 flex flex-col justify-between max-w-md mx-auto shadow-2xl relative overflow-x-hidden border-x border-slate-800">
+
+    <!-- TOP HEADER -->
+    <header class="sticky top-0 z-30 glass-card px-4 py-3 flex items-center justify-between border-b border-slate-800/80">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-emerald-400 flex items-center justify-center text-slate-950 font-black text-xl shadow-lg shadow-sky-500/20">
+                <i class="fa-solid font-bold fa-heart-pulse"></i>
+            </div>
+            <div>
+                <h1 class="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
+                    HealthGuard <span class="bg-gradient-to-r from-sky-400 to-emerald-400 bg-clip-text text-transparent text-xs px-1.5 py-0.5 rounded border border-sky-400/30 font-bold">AI</span>
+                </h1>
+                <p class="text-[11px] text-slate-400 flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                    <span>ESP32-S3 Live Sync</span>
+                </p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button onclick="toggleModal('member-manage-modal')" class="p-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs flex items-center gap-1.5 transition font-semibold" title="Quản Lý Vân Tay & Thành Viên">
+                <i class="fa-solid fa-fingerprint"></i>
+                <span class="hidden sm:inline">Quản Lý</span>
+            </button>
+            <button onclick="triggerEmergencyAlert()" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs transition" title="Thử Báo Động">
+                <i class="fa-solid fa-bell"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT CONTAINER -->
+    <main class="flex-1 overflow-y-auto px-4 py-4 space-y-5 pb-24 hide-scrollbar">
+
+        <!-- MEMBER SELECTOR CAROUSEL -->
+        <section>
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Thành Viên Gia Đình</span>
+                <div class="flex items-center gap-2">
+                    <button onclick="autoEnrollFingerprint()" class="text-[11px] bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 px-2 py-0.5 rounded-lg border border-emerald-500/40 font-semibold flex items-center gap-1 transition">
+                        <i class="fa-solid fa-plus text-[10px]"></i> Thêm Vân Tay
+                    </button>
+                    <span id="memberCountBadge" class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full border border-slate-700">5 Hồ Sơ</span>
+                </div>
+            </div>
+            <div id="memberList" class="flex space-x-3 overflow-x-auto pb-2 hide-scrollbar">
+                <!-- Dynamically Populated -->
+            </div>
+        </section>
+
+        <!-- VITALS SUMMARY CARDS GRID -->
+        <section class="space-y-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <h2 class="font-bold text-sm text-slate-200">Chỉ Số Sinh Hiệu Mới Nhất</h2>
+                    <span id="lastUpdatedTime" class="text-[11px] text-slate-400 font-mono">--:--:--</span>
+                </div>
+                <span id="biometricBadge" class="text-xs bg-slate-800 text-sky-400 px-2.5 py-1 rounded-lg border border-slate-700 flex items-center gap-1">
+                    <i class="fa-solid fa-fingerprint"></i> ID Vân Tay: <strong id="currentFingerprintId">#1</strong>
+                </span>
+            </div>
+
+            <!-- 4 CORE METRICS GRID -->
+            <div class="grid grid-cols-2 gap-3">
+                <!-- Heart Rate -->
+                <div class="glass-card p-3.5 rounded-2xl relative overflow-hidden group">
+                    <div class="flex justify-between items-start">
+                        <span class="text-xs font-semibold text-slate-400">Nhịp Tim</span>
+                        <div class="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
+                            <i class="fa-solid fa-heart-pulse pulse-heart"></i>
+                        </div>
+                    </div>
+                    <div class="mt-2 flex items-baseline gap-1.5">
+                        <span id="valHeartRate" class="text-2xl font-extrabold text-white tracking-tight">--</span>
+                        <span class="text-xs text-slate-400 font-medium">BPM</span>
+                    </div>
+                    <div class="mt-2 flex items-center text-[11px] font-medium" id="statusHeartRate">
+                        <span class="text-slate-400">Đang cập nhật...</span>
+                    </div>
+                </div>
+
+                <!-- SpO2 -->
+                <div class="glass-card p-3.5 rounded-2xl relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <span class="text-xs font-semibold text-slate-400">Nồng Độ SpO2</span>
+                        <div class="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center">
+                            <i class="fa-solid fa-lungs"></i>
+                        </div>
+                    </div>
+                    <div class="mt-2 flex items-baseline gap-1.5">
+                        <span id="valSpo2" class="text-2xl font-extrabold text-white tracking-tight">--</span>
+                        <span class="text-xs text-slate-400 font-medium">%</span>
+                    </div>
+                    <div class="mt-2 flex items-center text-[11px] font-medium" id="statusSpo2">
+                        <span class="text-slate-400">Đang cập nhật...</span>
+                    </div>
+                </div>
+
+                <!-- Temperature -->
+                <div class="glass-card p-3.5 rounded-2xl relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <span class="text-xs font-semibold text-slate-400">Thân Nhiệt</span>
+                        <div class="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                            <i class="fa-solid fa-temperature-half"></i>
+                        </div>
+                    </div>
+                    <div class="mt-2 flex items-baseline gap-1.5">
+                        <span id="valTemp" class="text-2xl font-extrabold text-white tracking-tight">--</span>
+                        <span class="text-xs text-slate-400 font-medium">°C</span>
+                    </div>
+                    <div class="mt-2 flex items-center text-[11px] font-medium" id="statusTemp">
+                        <span class="text-slate-400">Đang cập nhật...</span>
+                    </div>
+                </div>
+
+                <!-- Blood Pressure -->
+                <div class="glass-card p-3.5 rounded-2xl relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <span class="text-xs font-semibold text-slate-400">Huyết Áp</span>
+                        <div class="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+                            <i class="fa-solid fa-stethoscope"></i>
+                        </div>
+                    </div>
+                    <div class="mt-2 flex items-baseline gap-1">
+                        <span id="valBP" class="text-xl font-extrabold text-white tracking-tight">--/--</span>
+                        <span class="text-[10px] text-slate-400 font-medium">mmHg</span>
+                    </div>
+                    <div class="mt-2 flex items-center text-[11px] font-medium" id="statusBP">
+                        <span class="text-slate-400">Đang cập nhật...</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ESP32 LOCAL AI DIAGNOSIS + GEMINI ASSISTANT -->
+        <section class="glass-card p-4 rounded-2xl space-y-3 border-l-4 border-l-sky-500">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-microchip text-sky-400"></i>
+                    <h3 class="font-bold text-sm text-slate-100">Chẩn Đoán AI ESP32</h3>
+                </div>
+                <span id="aiBadge" class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Bình thường
+                </span>
+            </div>
+
+            <p id="aiRawSummary" class="text-xs text-slate-300 leading-relaxed bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                Chờ dữ liệu kết quả từ ESP32-S3...
+            </p>
+
+            <!-- GEMINI API EXPANDED ADVICE BUTTON -->
+            <button onclick="askGeminiDoctor()" id="btnGemini" class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 transition active:scale-[0.98]">
+                <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
+                <span>Phân Tích Chi Tiết Cùng Gemini AI</span>
+            </button>
+
+            <!-- Gemini Result Container -->
+            <div id="geminiOutput" class="hidden text-xs text-slate-200 bg-slate-900/90 p-3 rounded-xl border border-indigo-500/30 space-y-2 leading-relaxed">
+                <div class="flex items-center gap-1.5 text-indigo-400 font-bold text-[11px] border-b border-slate-800 pb-1">
+                    <i class="fa-solid fa-user-doctor"></i> Tư Vấn Y Khoa AI (Gemini Flash)
+                </div>
+                <div id="geminiText" class="text-slate-300 whitespace-pre-line"></div>
+            </div>
+        </section>
+
+        <!-- HEALTH TREND GRAPH (BY MEASUREMENT INDEX) -->
+        <section class="glass-card p-4 rounded-2xl space-y-3">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-line text-emerald-400"></i>
+                        <span>Biểu Đồ Xu Hướng</span>
+                    </h3>
+                    <p class="text-[10px] text-slate-400 mt-0.5">Theo thứ tự các lần đo gần nhất</p>
+                </div>
+                <span class="text-[10px] bg-slate-900 text-sky-400 px-2.5 py-1 rounded-md border border-slate-800 font-semibold">
+                    Theo Lần Đo
+                </span>
+            </div>
+            
+            <div class="h-52 w-full relative">
+                <canvas id="vitalsChart"></canvas>
+            </div>
+        </section>
+
+        <!-- RECENT MEASUREMENTS LOG (FULL PARAMETERS) -->
+        <section class="glass-card p-4 rounded-2xl space-y-3">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-purple-400"></i>
+                        <span>Lịch Sử Đo Đầy Đủ</span>
+                    </h3>
+                    <p class="text-[10px] text-slate-400 mt-0.5">Nhiệt độ, nhịp tim, huyết áp, SpO2</p>
+                </div>
+                <button onclick="exportHistoryCSV()" class="text-[11px] text-sky-400 hover:text-sky-300 transition flex items-center gap-1 font-semibold">
+                    <i class="fa-solid fa-download"></i> Xuất CSV
+                </button>
+            </div>
+            
+            <div id="historyTableContainer" class="space-y-2 max-h-64 overflow-y-auto pr-1 hide-scrollbar">
+                <!-- Dynamically Inserted with full metrics -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- BOTTOM NAVIGATION BAR -->
+    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto glass-card border-t border-slate-800/80 px-8 py-2.5 flex justify-around items-center z-40">
+        <button onclick="switchTab('dashboard')" class="flex flex-col items-center gap-1 text-sky-400 font-medium text-[11px]">
+            <i class="fa-solid fa-house-medical text-base"></i>
+            <span>Tổng Quan</span>
+        </button>
+        <button onclick="toggleModal('member-manage-modal')" class="flex flex-col items-center gap-1 text-slate-400 hover:text-sky-400 transition text-[11px]">
+            <i class="fa-solid fa-fingerprint text-base"></i>
+            <span>Vân Tay & Thành Viên</span>
+        </button>
+        <button onclick="toggleModal('info-modal')" class="flex flex-col items-center gap-1 text-slate-400 hover:text-sky-400 transition text-[11px]">
+            <i class="fa-solid fa-circle-info text-base"></i>
+            <span>Hướng Dẫn</span>
+        </button>
+    </nav>
+
+    <!-- MEMBER & FINGERPRINT MANAGEMENT MODAL -->
+    <div id="member-manage-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="glass-card w-full max-w-sm rounded-3xl p-5 space-y-4 border border-slate-700 shadow-2xl relative max-h-[85vh] overflow-y-auto hide-scrollbar">
+            <button onclick="toggleModal('member-manage-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            
+            <div class="flex items-center gap-2 text-sky-400 font-bold border-b border-slate-800 pb-2">
+                <i class="fa-solid fa-users-gear text-base"></i>
+                <h3 class="text-sm">Quản Lý Vân Tay & Thành Viên</h3>
+            </div>
+
+            <!-- Auto enroll button inside modal -->
+            <button onclick="autoEnrollFingerprint()" class="w-full py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center justify-center gap-2 transition">
+                <i class="fa-solid fa-fingerprint text-sm"></i>
+                <span>Thêm Vân Tay Tự Động (ID Mới)</span>
+            </button>
+
+            <p class="text-[11px] text-slate-400">Nhấn vào "Sửa" bên cạnh thành viên để đổi tên, tuổi hoặc biểu tượng đại diện:</p>
+
+            <div id="memberManageList" class="space-y-2">
+                <!-- Dynamic Member Management Items -->
+            </div>
+        </div>
+    </div>
+
+    <!-- DELETE CONFIRMATION MODAL (Không dùng confirm() mặc định) -->
+    <div id="delete-confirm-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="glass-card w-full max-w-xs rounded-3xl p-5 space-y-4 border border-rose-500/40 shadow-2xl relative text-center">
+            <div class="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-trash-can"></i>
+            </div>
+            <div>
+                <h3 class="text-sm font-bold text-white">Xác Nhận Xóa Vân Tay</h3>
+                <p id="deleteConfirmText" class="text-xs text-slate-300 mt-1">Bạn có chắc chắn muốn xóa hồ sơ thành viên này cùng dữ liệu đo?</p>
+            </div>
+            <div class="flex items-center gap-2 pt-2">
+                <button onclick="toggleModal('delete-confirm-modal')" class="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition">
+                    Hủy
+                </button>
+                <button onclick="executeDeleteMember()" class="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition shadow-lg shadow-rose-600/30">
+                    Đồng Ý Xóa
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDIT MEMBER FORM MODAL -->
+    <div id="edit-member-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="glass-card w-full max-w-xs rounded-3xl p-5 space-y-4 border border-slate-700 shadow-2xl relative">
+            <button onclick="toggleModal('edit-member-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+
+            <div class="flex items-center gap-2 text-sky-400 font-bold border-b border-slate-800 pb-2">
+                <i class="fa-solid fa-user-pen"></i>
+                <h3 class="text-sm">Sửa Thông Tin Thành Viên</h3>
+            </div>
+
+            <input type="hidden" id="editUserId">
+
+            <!-- Dynamic Error Alert Container -->
+            <div id="editFormError" class="hidden text-xs text-rose-300 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/30 font-medium"></div>
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-300 font-medium mb-1 flex items-center justify-between">
+                        <span>ID Vân Tay (Số)</span>
+                        <span class="text-[10px] text-sky-400">Trùng với ID cảm biến AS608</span>
+                    </label>
+                    <input type="number" id="editUserFingerprintId" min="1" max="127" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-white font-mono font-bold focus:outline-none focus:border-sky-500">
+                </div>
+                <div>
+                    <label class="block text-slate-300 font-medium mb-1">Tên Thành Viên</label>
+                    <input type="text" id="editUserName" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-white font-semibold focus:outline-none focus:border-sky-500">
+                </div>
+                <div>
+                    <label class="block text-slate-300 font-medium mb-1">Tuổi</label>
+                    <input type="number" id="editUserAge" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-white font-mono focus:outline-none focus:border-sky-500">
+                </div>
+                <div>
+                    <label class="block text-slate-300 font-medium mb-1">Biểu Tượng Emoji Avatar</label>
+                    <select id="editUserAvatar" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-white">
+                        <option value="👨‍💼">👨‍💼 - Bố / Nam trung niên</option>
+                        <option value="👩‍🍳">👩‍🍳 - Mẹ / Nữ trung niên</option>
+                        <option value="👴">👴 - Ông nội / Ông ngoại</option>
+                        <option value="👵">👵 - Bà nội / Bà ngoại</option>
+                        <option value="👦">👦 - Con trai</option>
+                        <option value="👧">👧 - Con gái</option>
+                        <option value="👤">👤 - Mặc định</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-1">
+                <button onclick="saveMemberChanges()" class="w-full py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shadow-lg shadow-sky-500/20 transition">
+                    <i class="fa-solid fa-check mr-1"></i> Lưu Thay Đổi
+                </button>
+                <button onclick="confirmDeleteFromEditModal()" class="w-full py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-semibold text-xs border border-rose-500/30 transition flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-trash-can"></i> Xóa Vân Tay & Hồ Sơ Này
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- INFO & ESP32 HARDWARE SETUP MODAL -->
+    <div id="info-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="glass-card w-full max-w-sm rounded-3xl p-5 space-y-4 border border-slate-700 shadow-2xl relative max-h-[80vh] overflow-y-auto hide-scrollbar">
+            <button onclick="toggleModal('info-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            
+            <h3 class="text-sm font-bold text-sky-400 flex items-center gap-2 border-b border-slate-800 pb-2">
+                <i class="fa-solid fa-code"></i> Hướng Dẫn Kết Nối ESP32-S3
+            </h3>
+
+            <div class="text-xs text-slate-300 space-y-2.5 leading-relaxed">
+                <p>ESP32-S3 gửi kết quả qua HTTP POST JSON tới máy chủ hoặc Web App:</p>
+                
+                <div class="bg-slate-900 p-3 rounded-xl font-mono text-[11px] text-slate-300 border border-slate-800 overflow-x-auto">
+{<br>
+&nbsp;&nbsp;"user_id": 1,<br>
+&nbsp;&nbsp;"heart_rate": 78,<br>
+&nbsp;&nbsp;"spo2": 98,<br>
+&nbsp;&nbsp;"temp": 36.6,<br>
+&nbsp;&nbsp;"sys_bp": 118,<br>
+&nbsp;&nbsp;"dia_bp": 78,<br>
+&nbsp;&nbsp;"ai_status": "Bình thường"<br>
+}
+                </div>
+
+                <p class="text-slate-400">Khi cảm biến vân tay AS608 quét trùng khớp <strong>user_id</strong>, ứng dụng sẽ tự động cập nhật đúng tên thành viên tương ứng!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- EMERGENCY MODAL ALERT -->
+    <div id="emergency-modal" class="fixed inset-0 bg-rose-950/90 backdrop-blur-md z-50 flex items-center justify-center p-5 hidden">
+        <div class="bg-slate-900 w-full max-w-sm rounded-3xl p-6 space-y-4 border-2 border-rose-500 shadow-2xl text-center">
+            <div class="w-16 h-16 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center mx-auto text-3xl animate-pulse">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 class="text-lg font-extrabold text-white">CẢNH BÁO SỨC KHỎE KHẨN CẤP</h3>
+            <p id="emergencyText" class="text-xs text-rose-200 leading-relaxed bg-rose-500/10 p-3 rounded-xl border border-rose-500/30">
+                Phát hiện chỉ số nồng độ SpO2 hạ thấp dưới mức an toàn (< 92%)!
+            </p>
+            <button onclick="toggleModal('emergency-modal')" class="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-600/30">
+                Đã Hiểu & Xử Lý
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /* ==============================================================================
+           HEALTHGUARD APP - CORE STATE & LOGIC
+           ============================================================================== */
+        
+        // 1. Dynamic Family Database Mapping (Fingerprint ID -> Profile)
+        let USER_DB = {
+            1: { name: "Bố", avatar: "👨‍💼", age: 52 },
+            2: { name: "Mẹ", avatar: "👩‍🍳", age: 48 },
+            3: { name: "Ông Nội", avatar: "👴", age: 78 },
+            4: { name: "Bà Nội", avatar: "👵", age: 75 },
+            5: { name: "Con", avatar: "👦", age: 20 }
+        };
+
+        let activeUserId = 1;
+        let deleteMemberTargetId = null;
+        
+        // Initial Health Store for Vitals & Measurement History
+        let healthData = {
+            latest: {
+                1: { heart_rate: 74, spo2: 98, temp: 36.6, sys_bp: 118, dia_bp: 78, ai_status: "Bình thường", timestamp: "10:15:20 (05/08)" },
+                2: { heart_rate: 80, spo2: 97, temp: 36.8, sys_bp: 122, dia_bp: 82, ai_status: "Bình thường", timestamp: "09:30:11 (05/08)" },
+                3: { heart_rate: 88, spo2: 94, temp: 37.1, sys_bp: 138, dia_bp: 88, ai_status: "Huyết áp hơi cao", timestamp: "08:12:00 (05/08)" },
+                4: { heart_rate: 76, spo2: 96, temp: 36.5, sys_bp: 125, dia_bp: 80, ai_status: "Bình thường", timestamp: "07:45:30 (05/08)" },
+                5: { heart_rate: 70, spo2: 99, temp: 36.4, sys_bp: 112, dia_bp: 72, ai_status: "Bình thường", timestamp: "11:00:00 (05/08)" }
+            },
+            history: {
+                1: [
+                    { heart_rate: 72, spo2: 98, temp: 36.5, sys_bp: 116, dia_bp: 76, ai_status: "Bình thường", timestamp: "08:00 (05/08)" },
+                    { heart_rate: 75, spo2: 98, temp: 36.6, sys_bp: 120, dia_bp: 78, ai_status: "Bình thường", timestamp: "09:00 (05/08)" },
+                    { heart_rate: 74, spo2: 98, temp: 36.6, sys_bp: 118, dia_bp: 78, ai_status: "Bình thường", timestamp: "10:15 (05/08)" }
+                ],
+                3: [
+                    { heart_rate: 82, spo2: 95, temp: 37.0, sys_bp: 132, dia_bp: 85, ai_status: "Bình thường", timestamp: "06:00 (05/08)" },
+                    { heart_rate: 88, spo2: 94, temp: 37.1, sys_bp: 138, dia_bp: 88, ai_status: "Huyết áp hơi cao", timestamp: "08:12 (05/08)" }
+                ]
+            }
+        };
+
+        let myChart = null;
+
+        window.onload = function() {
+            renderMemberCarousel();
+            renderMemberManageList();
+            updateDashboardDisplay();
+            initChart();
+        };
+
+        function renderMemberCarousel() {
+            const listEl = document.getElementById('memberList');
+            const countBadge = document.getElementById('memberCountBadge');
+            listEl.innerHTML = '';
+
+            const userIds = Object.keys(USER_DB);
+            countBadge.innerText = `${userIds.length} Hồ Sơ`;
+
+            userIds.forEach(id => {
+                const user = USER_DB[id];
+                const isActive = parseInt(id) === activeUserId;
+                
+                const card = document.createElement('div');
+                card.className = `flex-shrink-0 cursor-pointer p-2.5 px-3.5 rounded-2xl transition flex items-center gap-2.5 ${isActive ? 'glass-card-active border-sky-400' : 'glass-card hover:bg-slate-800'}`;
+                card.onclick = () => selectMember(parseInt(id));
+
+                card.innerHTML = `
+                    <span class="text-xl">${user.avatar}</span>
+                    <div>
+                        <div class="text-xs font-bold ${isActive ? 'text-sky-300' : 'text-slate-200'}">${user.name}</div>
+                        <div class="text-[10px] text-slate-400">${user.age} tuổi • ID #${id}</div>
+                    </div>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        // AUTO ENROLL NEW FINGERPRINT ID
+        function autoEnrollFingerprint() {
+            const existingIds = Object.keys(USER_DB).map(Number);
+            const nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
+            
+            USER_DB[nextId] = {
+                name: `Thành viên #${nextId}`,
+                avatar: "👤",
+                age: 25
+            };
+
+            // Initialize default vitals for newly enrolled fingerprint
+            healthData.latest[nextId] = {
+                heart_rate: 75, spo2: 98, temp: 36.5, sys_bp: 120, dia_bp: 80,
+                ai_status: "Mới tạo - Bình thường", timestamp: "Vừa khởi tạo"
+            };
+            healthData.history[nextId] = [
+                { heart_rate: 75, spo2: 98, temp: 36.5, sys_bp: 120, dia_bp: 80, ai_status: "Bình thường", timestamp: "Lần 1" }
+            ];
+
+            activeUserId = nextId;
+            renderMemberCarousel();
+            renderMemberManageList();
+            updateDashboardDisplay();
+
+            // Open edit modal directly to allow user to customize newly created profile
+            openEditMemberModal(nextId);
+        }
+
+        function renderMemberManageList() {
+            const container = document.getElementById('memberManageList');
+            container.innerHTML = '';
+
+            Object.keys(USER_DB).forEach(id => {
+                const user = USER_DB[id];
+                const item = document.createElement('div');
+                item.className = "flex items-center justify-between bg-slate-900/80 p-3 rounded-2xl border border-slate-800";
+                item.innerHTML = `
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-2xl">${user.avatar}</span>
+                        <div>
+                            <div class="text-xs font-bold text-white">${user.name}</div>
+                            <div class="text-[10px] text-sky-400 font-mono">ID Vân tay: #${id} • ${user.age} tuổi</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <button onclick="openEditMemberModal(${id})" class="px-2.5 py-1.5 rounded-xl bg-sky-500/20 text-sky-300 hover:bg-sky-500/30 text-xs font-semibold border border-sky-500/40 transition" title="Chỉnh sửa">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button onclick="confirmDeleteMember(${id})" class="px-2.5 py-1.5 rounded-xl bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 text-xs font-semibold border border-rose-500/40 transition" title="Xóa vân tay">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function openEditMemberModal(id) {
+            const user = USER_DB[id];
+            if (!user) return;
+
+            // Hide error state
+            const errBox = document.getElementById('editFormError');
+            errBox.classList.add('hidden');
+            errBox.innerText = '';
+
+            document.getElementById('editUserId').value = id;
+            document.getElementById('editUserFingerprintId').value = id;
+            document.getElementById('editUserName').value = user.name;
+            document.getElementById('editUserAge').value = user.age;
+            document.getElementById('editUserAvatar').value = user.avatar || "👤";
+
+            // Hide manage modal if open
+            document.getElementById('member-manage-modal').classList.add('hidden');
+            // Show edit modal
+            document.getElementById('edit-member-modal').classList.remove('hidden');
+        }
+
+        function saveMemberChanges() {
+            const oldId = parseInt(document.getElementById('editUserId').value);
+            const newId = parseInt(document.getElementById('editUserFingerprintId').value);
+            const name = document.getElementById('editUserName').value.trim();
+            const age = parseInt(document.getElementById('editUserAge').value) || 20;
+            const avatar = document.getElementById('editUserAvatar').value;
+
+            const errBox = document.getElementById('editFormError');
+            errBox.classList.add('hidden');
+
+            if (isNaN(newId) || newId <= 0) {
+                errBox.innerText = "ID Vân tay phải là một số nguyên dương!";
+                errBox.classList.remove('hidden');
+                return;
+            }
+
+            if (!name) {
+                errBox.innerText = "Vui lòng nhập tên thành viên!";
+                errBox.classList.remove('hidden');
+                return;
+            }
+
+            // Check if user changed the Fingerprint ID to an existing ID
+            if (newId !== oldId && USER_DB[newId]) {
+                errBox.innerText = `ID Vân tay #${newId} đã tồn tại cho người dùng "${USER_DB[newId].name}". Vui lòng chọn ID khác!`;
+                errBox.classList.remove('hidden');
+                return;
+            }
+
+            // Migrate data if ID changed
+            if (newId !== oldId) {
+                USER_DB[newId] = { name, age, avatar };
+                delete USER_DB[oldId];
+
+                // Migrate vitals data
+                healthData.latest[newId] = healthData.latest[oldId] || {
+                    heart_rate: '--', spo2: '--', temp: '--', sys_bp: '--', dia_bp: '--',
+                    ai_status: "Bình thường", timestamp: "Chưa đo"
+                };
+                delete healthData.latest[oldId];
+
+                healthData.history[newId] = healthData.history[oldId] || [];
+                delete healthData.history[oldId];
+
+                if (activeUserId === oldId) {
+                    activeUserId = newId;
+                }
+            } else {
+                USER_DB[oldId] = { name, age, avatar };
+            }
+
+            renderMemberCarousel();
+            renderMemberManageList();
+            updateDashboardDisplay();
+
+            toggleModal('edit-member-modal');
+        }
+
+        // CONFIRM DELETE MEMBER PROCESS (CUSTOM MODAL - NO ALERT/CONFIRM)
+        function confirmDeleteMember(id) {
+            deleteMemberTargetId = id;
+            const user = USER_DB[id];
+            const confirmText = document.getElementById('deleteConfirmText');
+            confirmText.innerText = `Bạn có chắc muốn xóa thành viên "${user?.name || 'mã #' + id}" (ID Vân tay #${id})?`;
+
+            document.getElementById('member-manage-modal').classList.add('hidden');
+            document.getElementById('edit-member-modal').classList.add('hidden');
+            document.getElementById('delete-confirm-modal').classList.remove('hidden');
+        }
+
+        function confirmDeleteFromEditModal() {
+            const currentEditingId = parseInt(document.getElementById('editUserId').value);
+            confirmDeleteMember(currentEditingId);
+        }
+
+        function executeDeleteMember() {
+            if (!deleteMemberTargetId || !USER_DB[deleteMemberTargetId]) return;
+
+            delete USER_DB[deleteMemberTargetId];
+            delete healthData.latest[deleteMemberTargetId];
+            delete healthData.history[deleteMemberTargetId];
+
+            // If active user was deleted, switch active user to the first available member
+            const remainingIds = Object.keys(USER_DB).map(Number);
+            if (remainingIds.length > 0) {
+                if (activeUserId === deleteMemberTargetId || !USER_DB[activeUserId]) {
+                    activeUserId = remainingIds[0];
+                }
+            } else {
+                // If all members deleted, create a default profile
+                USER_DB[1] = { name: "Thành viên #1", avatar: "👤", age: 25 };
+                healthData.latest[1] = { heart_rate: '--', spo2: '--', temp: '--', sys_bp: '--', dia_bp: '--', ai_status: 'Chưa đo', timestamp: '--' };
+                healthData.history[1] = [];
+                activeUserId = 1;
+            }
+
+            deleteMemberTargetId = null;
+            toggleModal('delete-confirm-modal');
+
+            renderMemberCarousel();
+            renderMemberManageList();
+            updateDashboardDisplay();
+        }
+
+        function selectMember(id) {
+            activeUserId = id;
+            renderMemberCarousel();
+            updateDashboardDisplay();
+            document.getElementById('geminiOutput').classList.add('hidden');
+        }
+
+        function updateDashboardDisplay() {
+            const data = healthData.latest[activeUserId] || {
+                heart_rate: '--', spo2: '--', temp: '--', sys_bp: '--', dia_bp: '--',
+                ai_status: 'Chưa có dữ liệu', timestamp: '--:--'
+            };
+
+            document.getElementById('currentFingerprintId').innerText = `#${activeUserId}`;
+            document.getElementById('lastUpdatedTime').innerText = data.timestamp;
+
+            // Heart Rate
+            document.getElementById('valHeartRate').innerText = data.heart_rate;
+            formatStatus('statusHeartRate', data.heart_rate, 60, 100, 'bpm');
+
+            // SpO2
+            document.getElementById('valSpo2').innerText = data.spo2;
+            formatStatus('statusSpo2', data.spo2, 95, 100, '%');
+
+            // Temperature
+            document.getElementById('valTemp').innerText = data.temp;
+            formatStatus('statusTemp', data.temp, 36.1, 37.5, '°C');
+
+            // Blood Pressure
+            document.getElementById('valBP').innerText = `${data.sys_bp}/${data.dia_bp}`;
+            formatBPStatus('statusBP', data.sys_bp, data.dia_bp);
+
+            // AI Status
+            const aiBadge = document.getElementById('aiBadge');
+            const aiRaw = document.getElementById('aiRawSummary');
+            aiRaw.innerText = `Chẩn đoán tự động từ ESP32 cho ${USER_DB[activeUserId]?.name || 'thành viên'}: "${data.ai_status}"`;
+
+            if (data.ai_status.toLowerCase().includes('bình thường')) {
+                aiBadge.className = "px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                aiBadge.innerText = "An toàn";
+            } else {
+                aiBadge.className = "px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                aiBadge.innerText = "Cần chú ý";
+            }
+
+            updateHistoryTable();
+            updateChart();
+        }
+
+        function formatStatus(elementId, val, min, max, unit) {
+            const el = document.getElementById(elementId);
+            if (val === '--') { el.innerHTML = `<span class="text-slate-500">Chưa đo</span>`; return; }
+            
+            if (val >= min && val <= max) {
+                el.innerHTML = `<span class="text-emerald-400 font-semibold"><i class="fa-solid fa-circle-check mr-1"></i>Bình thường</span>`;
+            } else if (val < min) {
+                el.innerHTML = `<span class="text-sky-400 font-semibold"><i class="fa-solid fa-circle-down mr-1"></i>Thấp hơn chuẩn</span>`;
+            } else {
+                el.innerHTML = `<span class="text-rose-400 font-semibold"><i class="fa-solid fa-circle-up mr-1"></i>Cao bất thường</span>`;
+            }
+        }
+
+        function formatBPStatus(elementId, sys, dia) {
+            const el = document.getElementById(elementId);
+            if (sys === '--') { el.innerHTML = `<span class="text-slate-500">Chưa đo</span>`; return; }
+
+            if (sys < 120 && dia < 80) {
+                el.innerHTML = `<span class="text-emerald-400 font-semibold"><i class="fa-solid fa-circle-check mr-1"></i>Lý tưởng</span>`;
+            } else if (sys <= 139 || dia <= 89) {
+                el.innerHTML = `<span class="text-amber-400 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Tiền cao huyết áp</span>`;
+            } else {
+                el.innerHTML = `<span class="text-rose-400 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Huyết áp cao</span>`;
+            }
+        }
+
+        // UPDATE HISTORY LOG WITH FULL PARAMETERS (Nhiệt độ, Nhịp tim, Huyết áp, SpO2)
+        function updateHistoryTable() {
+            const container = document.getElementById('historyTableContainer');
+            container.innerHTML = '';
+            const historyList = healthData.history[activeUserId] || [];
+
+            if (historyList.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-500 py-3 text-center">Chưa có lịch sử lưu trữ cho thành viên này</p>`;
+                return;
+            }
+
+            [...historyList].reverse().forEach((h, index) => {
+                const itemNum = historyList.length - index;
+                const item = document.createElement('div');
+                item.className = "bg-slate-900/80 p-3 rounded-2xl border border-slate-800 space-y-2";
+                item.innerHTML = `
+                    <div class="flex items-center justify-between border-b border-slate-800/60 pb-1.5">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded-md border border-sky-500/30">Lần ${itemNum}</span>
+                            <span class="text-slate-400 font-mono text-[11px]">${h.timestamp}</span>
+                        </div>
+                        <span class="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                            ${h.ai_status || 'Bình thường'}
+                        </span>
+                    </div>
+
+                    <!-- 4 PARAMS DETAILED GRID -->
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="flex items-center justify-between bg-slate-950/50 p-1.5 px-2.5 rounded-xl border border-slate-800">
+                            <span class="text-slate-400 flex items-center gap-1">🫀 Tim:</span>
+                            <strong class="text-rose-400">${h.heart_rate} <span class="text-[9px] text-slate-400">BPM</span></strong>
+                        </div>
+                        <div class="flex items-center justify-between bg-slate-950/50 p-1.5 px-2.5 rounded-xl border border-slate-800">
+                            <span class="text-slate-400 flex items-center gap-1">🫁 SpO2:</span>
+                            <strong class="text-sky-400">${h.spo2}%</strong>
+                        </div>
+                        <div class="flex items-center justify-between bg-slate-950/50 p-1.5 px-2.5 rounded-xl border border-slate-800">
+                            <span class="text-slate-400 flex items-center gap-1">🌡 Nhiệt:</span>
+                            <strong class="text-amber-400">${h.temp}°C</strong>
+                        </div>
+                        <div class="flex items-center justify-between bg-slate-950/50 p-1.5 px-2.5 rounded-xl border border-slate-800">
+                            <span class="text-slate-400 flex items-center gap-1">🩺 H.Áp:</span>
+                            <strong class="text-purple-400">${h.sys_bp}/${h.dia_bp}</strong>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function exportHistoryCSV() {
+            const historyList = healthData.history[activeUserId] || [];
+            if (historyList.length === 0) return;
+
+            let csvContent = "data:text/csv;charset=utf-8,LanDo,ThoiGian,NhipTim_BPM,SpO2_PhanTram,ThanNhiet_C,HuyetAp_TamThu,HuyetAp_TamTruong\n";
+            historyList.forEach((row, idx) => {
+                csvContent += `Lan ${idx + 1},${row.timestamp},${row.heart_rate},${row.spo2},${row.temp},${row.sys_bp},${row.dia_bp}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `HealthHistory_${USER_DB[activeUserId]?.name || 'Member'}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // CHART INITIALIZATION - LABELS INDEXED BY MEASUREMENT COUNT (Lần 1, Lần 2, Lần 3...)
+        function initChart() {
+            const ctx = document.getElementById('vitalsChart').getContext('2d');
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Nhịp tim (BPM)',
+                            data: [],
+                            borderColor: '#f43f5e',
+                            backgroundColor: 'rgba(244, 63, 94, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'SpO2 (%)',
+                            data: [],
+                            borderColor: '#38bdf8',
+                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { 
+                            ticks: { color: '#94a3b8', font: { size: 10, weight: 'bold' } }, 
+                            grid: { display: false } 
+                        },
+                        y: { 
+                            position: 'left', 
+                            ticks: { color: '#f43f5e', font: { size: 9 } }, 
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            title: { display: true, text: 'BPM', color: '#f43f5e', font: { size: 9 } }
+                        },
+                        y1: { 
+                            position: 'right', 
+                            ticks: { color: '#38bdf8', font: { size: 9 } }, 
+                            grid: { display: false }, 
+                            min: 80, max: 100,
+                            title: { display: true, text: 'SpO2 %', color: '#38bdf8', font: { size: 9 } }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#cbd5e1', font: { size: 10 } } }
+                    }
+                }
+            });
+            updateChart();
+        }
+
+        // UPDATE CHART BY MEASUREMENT SEQUENCE INDEX (LẦN 1, LẦN 2, LẦN 3...)
+        function updateChart() {
+            if (!myChart) return;
+            const historyList = healthData.history[activeUserId] || [];
+            
+            // Generate labels: "Lần 1", "Lần 2", "Lần 3"...
+            myChart.data.labels = historyList.map((_, idx) => `Lần ${idx + 1}`);
+            myChart.data.datasets[0].data = historyList.map(h => h.heart_rate);
+            myChart.data.datasets[1].data = historyList.map(h => h.spo2);
+            myChart.update();
+        }
+
+        async function askGeminiDoctor() {
+            const btn = document.getElementById('btnGemini');
+            const outputContainer = document.getElementById('geminiOutput');
+            const textEl = document.getElementById('geminiText');
+
+            const current = healthData.latest[activeUserId];
+            if (!current || current.heart_rate === '--') {
+                textEl.innerText = "Chưa có đủ dữ liệu đo để phân tích. Vui lòng quét vân tay và đo chỉ số từ thiết bị ESP32.";
+                outputContainer.classList.remove('hidden');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> Gemini Đang Phân Tích...`;
+
+            try {
+                // Lấy GEMINI_API_KEY trực tiếp từ Render Environment Variables qua Backend
+                const keyRes = await fetch('/api/config/gemini-key');
+                const keyData = await keyRes.json();
+                const apiKey = keyData.apiKey;
+
+                if (!apiKey) {
+                    textEl.innerText = "Chưa tìm thấy GEMINI_API_KEY trên Render. Vui lòng kiểm tra lại phần Environment Variables.";
+                    outputContainer.classList.remove('hidden');
+                    return;
+                }
+
+                const systemPrompt = "Bạn là trợ lý y khoa AI tư vấn sức khỏe gia đình chuyên nghiệp. Hãy đưa ra nhận xét ngắn gọn (3-4 dòng) bằng tiếng Việt cho người dùng về các chỉ số sinh hiệu đo được, đồng thời đưa ra 2 lời khuyên hữu ích về ăn uống/nghỉ ngơi. Thân thiện, chu đáo.";
+                const userPrompt = `Bệnh nhân: ${USER_DB[activeUserId]?.name || 'Thành viên'} (${USER_DB[activeUserId]?.age || 20} tuổi). Chỉ số hiện tại từ ESP32: Nhịp tim: ${current.heart_rate} bpm, SpO2: ${current.spo2}%, Thân nhiệt: ${current.temp}°C, Huyết áp: ${current.sys_bp}/${current.dia_bp} mmHg. Hãy phân tích.`;
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: userPrompt }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] }
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error.message || "Lỗi phản hồi từ Google AI");
+                }
+
+                const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Không thể tải phản hồi từ Gemini. Vui lòng thử lại.";
+                
+                textEl.innerText = aiText;
+                outputContainer.classList.remove('hidden');
+
+            } catch (err) {
+                textEl.innerText = "Lỗi phân tích Gemini: " + err.message;
+                outputContainer.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> Phân Tích Chi Tiết Cùng Gemini AI`;
+            }
+        }
+
+        function toggleModal(modalId) {
+            const el = document.getElementById(modalId);
+            if (el.classList.contains('hidden')) {
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        }
+
+        function triggerEmergencyAlert() {
+            document.getElementById('emergencyText').innerText = 
+                `CẢNH BÁO MÔ PHỎNG: Phát hiện chỉ số SpO2 bất ngờ sụt giảm dưới 90%! Yêu cầu kiểm tra người thân ngay lập tức.`;
+            toggleModal('emergency-modal');
+        }
+
+        function switchTab(tab) {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
