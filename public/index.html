@@ -928,7 +928,6 @@
                 const systemPrompt = "Bạn là trợ lý y khoa AI tư vấn sức khỏe gia đình chuyên nghiệp. Hãy đưa ra nhận xét ngắn gọn (3-4 dòng) bằng tiếng Việt cho người dùng về các chỉ số sinh hiệu đo được, đồng thời đưa ra 2 lời khuyên hữu ích về ăn uống/nghỉ ngơi. Thân thiện, chu đáo.";
                 const userPrompt = `Bệnh nhân: ${USER_DB[activeUserId]?.name || 'Thành viên'} (${USER_DB[activeUserId]?.age || 20} tuổi). Chỉ số hiện tại từ ESP32: Nhịp tim: ${current.heart_rate} bpm, SpO2: ${current.spo2}%, Thân nhiệt: ${current.temp}°C, Huyết áp: ${current.sys_bp}/${current.dia_bp} mmHg. Hãy phân tích.`;
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-             //   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
                 const response = await fetch(apiUrl, {
                     method: 'POST',
