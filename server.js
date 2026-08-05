@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { GoogleGenAI } = require('@google/genai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const app = express();
@@ -10,8 +10,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Khởi tạo Gemini AI Client từ biến môi trường GEMINI_API_KEY trên Render
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+// Khởi tạo Gemini Client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 let healthStorage = {
     latest: {},
@@ -64,16 +64,16 @@ app.post('/api/analyze-health', async (req, res) => {
         const systemPrompt = "Bạn là trợ lý y khoa AI tư vấn sức khỏe gia đình chuyên nghiệp. Hãy đưa ra nhận xét ngắn gọn (3-4 dòng) bằng tiếng Việt cho người dùng về các chỉ số sinh hiệu đo được, đồng thời đưa ra 2 lời khuyên hữu ích về ăn uống/nghỉ ngơi. Thân thiện, chu đáo.";
         const userPrompt = `Bệnh nhân: ${name || 'Thành viên'} (${age || 20} tuổi). Chỉ số hiện tại từ ESP32: Nhịp tim: ${vitals.heart_rate} bpm, SpO2: ${vitals.spo2}%, Thân nhiệt: ${vitals.temp}°C, Huyết áp: ${vitals.sys_bp}/${vitals.dia_bp} mmHg. Hãy phân tích.`;
 
-        // Gọi SDK Google Gen AI với model gemini-2.5-flash
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: userPrompt,
-            config: {
-                systemInstruction: systemPrompt
-            }
+        // Sử dụng mô hình gemini-2.5-flash chuẩn từ SDK chính thức
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash",
+            systemInstruction: systemPrompt 
         });
 
-        res.json({ result: response.text });
+        const result = await model.generateContent(userPrompt);
+        const responseText = result.response.text();
+
+        res.json({ result: responseText });
     } catch (error) {
         console.error("Lỗi Gemini backend:", error);
         res.status(500).json({ error: "Lỗi phân tích từ Gemini: " + error.message });
